@@ -100,6 +100,17 @@ CHROME_BIN="/path/to/chrome" npm test
 - 关键词中的正则特殊字符会自动转义，`C++`、`C#`、`.net` 可放心输入
 - `chrome://` 等浏览器内部页面不能注入，属浏览器安全限制
 
+## 发布到 Chrome Web Store
+
+商店安装包、截图、文案、隐私政策与权限审核答复均已备齐：
+
+```bash
+npm run pack         # 生成 dist/keyword-highlighter-vX.Y.Z.zip（仅运行时文件）
+npm run screenshots  # 重新生成 store/screenshots/ 下的 1280×800 商店截图
+```
+
+提交步骤见 **[store/PUBLISH.md](store/PUBLISH.md)**（含开发者账号注册、手动提交与 API 自动发布两条路径）。
+
 ## License
 
 [MIT](LICENSE)
