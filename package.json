@@ -6,8 +6,7 @@
   "scripts": {
     "test": "node test/test.js",
     "icons": "python3 tools/gen_icons.py",
-    "pack": "python3 tools/pack.py",
-    "screenshots": "node tools/screenshot.js"
+    "pack": "python3 tools/pack.py"
   },
   "devDependencies": {
     "playwright-core": "^1.55.0"

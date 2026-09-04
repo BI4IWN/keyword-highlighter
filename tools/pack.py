@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 打包 Chrome Web Store 上传用 zip：只含运行时文件，manifest 位于压缩包根目录
+# 打包扩展为 zip（只含运行时文件，manifest 位于压缩包根目录），便于分发安装
 # 用法: python3 tools/pack.py （或 npm run pack）
 import json
 import zipfile

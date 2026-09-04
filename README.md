@@ -34,7 +34,6 @@
 4. 点击工具栏拼图图标，把「关键词高亮助手」**固定**到工具栏，点击图标即可配置关键词
 
 > 版本要求：Chrome 110+ / Edge 110+。
-> 如需上架应用商店：Chrome 走 [Chrome Web Store 开发者后台](https://chrome.google.com/webstore/devconsole)，Edge 走 [Edge 加载项合作中心](https://partner.microsoft.com/dashboard/microsoftedge)，上传仓库 zip 即可。
 
 ## 使用说明
 
@@ -73,7 +72,7 @@ keyword-highlighter/
 ├── content.css          # 高亮样式（颜色由每个 mark 的 CSS 变量控制）
 ├── popup.html/.css/.js  # 弹窗配置面板
 ├── icons/               # 16/48/128 图标
-├── tools/gen_icons.py   # 图标生成脚本（纯标准库）
+├── tools/               # gen_icons.py 图标生成、pack.py 打包脚本（纯标准库）
 └── test/                # 端到端测试（playwright-core + 内置静态服务器）
 ```
 
@@ -100,6 +99,17 @@ CHROME_BIN="/path/to/chrome" npm test
 - 关键词中的正则特殊字符会自动转义，`C++`、`C#`、`.net` 可放心输入
 - `chrome://` 等浏览器内部页面不能注入，属浏览器安全限制
 
+## 打包分发
+
+想分享给别人时，生成一个只含运行时文件的干净 zip（manifest 位于压缩包根目录，对方解压后按上面步骤加载即可）：
+
+```bash
+npm run pack   # 生成 dist/keyword-highlighter-vX.Y.Z.zip
+```
+
+## 隐私
+
+纯前端实现，**无任何数据收集、无远程请求**，配置仅保存在浏览器本地（`chrome.storage`）。详见[隐私政策](PRIVACY.md)。
 
 ## License
 
