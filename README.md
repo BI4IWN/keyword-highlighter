@@ -1,0 +1,105 @@
+# 关键词高亮助手（Chrome / Edge 扩展）
+
+![Manifest V3](https://img.shields.io/badge/Manifest-V3-519aba) ![Chrome](https://img.shields.io/badge/Chrome-110%2B-4285F4) ![Edge](https://img.shields.io/badge/Edge-110%2B-0078D7) ![License](https://img.shields.io/badge/License-MIT-green)
+
+自定义关键词，在网页中自动高亮显示。同时支持 **Chrome** 与 **Microsoft Edge**（均为 Chromium 内核，同一份代码）。支持逐词/批量颜色、大小写匹配、iframe、动态内容监听、工具栏角标计数。
+
+纯前端实现，**无任何数据收集、无远程请求**，配置仅保存在浏览器本地（`chrome.storage`）。
+
+## 功能特性
+
+- **关键词管理**：输入后回车（或点「添加」）即可添加，支持逗号／顿号／分号批量添加，最多 100 个
+- **默认黄色高亮**：新增关键词默认使用黄色 `#ffe066`
+- **逐词颜色**：每个关键词前的色块就是它的高亮颜色，点击可自定义
+- **批量设置颜色**：点击预设色板一键应用到全部关键词，或自定义颜色后点「应用到全部」；单个关键词仍可单独覆盖
+- **大小写匹配**：默认不区分大小写（`chrome` / `Chrome` / `CHROME` 都命中），可切换为精确匹配
+- **iframe 支持**：网页内嵌 iframe 中的关键词同样高亮
+- **动态内容监听**：单页应用（SPA）、无限滚动、流式输出等动态插入的内容自动扫描高亮；页面卡顿时可关闭
+- **自动生效**：安装/更新扩展时自动为已打开的页面补注入；弹窗「重新扫描」可随时修复
+- **角标计数**：工具栏图标显示当前页主框架的命中数量
+- **安全排除**：输入框、富文本编辑器、`<code>`/`<pre>`、`<script>`/`<style>` 等不做处理，避免破坏页面功能
+
+## 安装（开发者模式加载）
+
+1. 克隆本仓库或下载 zip 并解压到**固定位置**（如 `D:\ChromeExt\keyword-highlighter`，之后不要删除/移动该文件夹）：
+
+   ```bash
+   git clone https://github.com/BI4IWN/keyword-highlighter.git
+   ```
+
+2. 打开扩展管理页：
+   - **Chrome**：地址栏输入 `chrome://extensions`，打开右上角**「开发者模式」**
+   - **Edge**：地址栏输入 `edge://extensions`，打开**「开发人员模式」**
+3. 点击 **「加载已解压的扩展程序」／「加载解压缩的扩展」**，选择本仓库文件夹（直接包含 `manifest.json` 的那一层）
+4. 点击工具栏拼图图标，把「关键词高亮助手」**固定**到工具栏，点击图标即可配置关键词
+
+> 版本要求：Chrome 110+ / Edge 110+。
+> 如需上架应用商店：Chrome 走 [Chrome Web Store 开发者后台](https://chrome.google.com/webstore/devconsole)，Edge 走 [Edge 加载项合作中心](https://partner.microsoft.com/dashboard/microsoftedge)，上传仓库 zip 即可。
+
+## 使用说明
+
+| 操作 | 方式 |
+| --- | --- |
+| 添加关键词 | 输入后回车；多个词用 `,` `，` `、` `;` 分隔 |
+| 删除关键词 | 词右侧的 ✕ |
+| 修改单个颜色 | 点击词左侧的色块 |
+| 批量设置颜色 | 底部预设色板点一下，或选自定义颜色后点「应用到全部」 |
+| 开关高亮 | 顶部绿色开关 |
+| 页面未生效 | 点底部「重新扫描」自动注入，或刷新页面 |
+| 当前页计数 | 底部「当前页高亮 N 处」 |
+
+配置通过 `chrome.storage.sync` 保存：Chrome 登录 Google 账号、Edge 登录 Microsoft 账号后可在设备间同步；未登录时仅保存在本机。
+
+## 常见问题排查
+
+**关键词添加了，但页面没有高亮？** 按顺序检查：
+
+1. **看弹窗底部的状态文字**
+   - 「当前页高亮 N 处」→ 已生效，N 为 0 说明当前页确实没有关键词
+   - 「此页面未生效」→ 页面在扩展安装前就已打开，点「重新扫描」自动注入
+   - 「此页面不支持高亮」→ 见第 2 条
+2. **页面类型**：`chrome://`、`edge://`、新标签页、应用商店等内部页面不允许注入；本地文件（`file://`）需在扩展详情打开「允许访问文件网址」
+3. **「区分大小写」**：勾选后 `chrome` 不会命中 `Chrome`（中文不受影响）
+4. **中文输入法**：组词期间按回车只是上屏候选词，上屏后**再按一次回车**或点「添加」
+5. 仍不行：到扩展管理页看卡片上有没有红色「错误」按钮，把错误内容提 issue
+
+## 开发
+
+```
+keyword-highlighter/
+├── manifest.json        # MV3 清单：权限、内容脚本、弹窗、后台
+├── background.js        # Service Worker：默认配置、安装时补注入、角标
+├── content.js           # 内容脚本：TreeWalker 扫描文本节点，<mark> 包裹
+├── content.css          # 高亮样式（颜色由每个 mark 的 CSS 变量控制）
+├── popup.html/.css/.js  # 弹窗配置面板
+├── icons/               # 16/48/128 图标
+├── tools/gen_icons.py   # 图标生成脚本（纯标准库）
+└── test/                # 端到端测试（playwright-core + 内置静态服务器）
+```
+
+扩展本体无需构建，改完代码在扩展管理页刷新即可。
+
+**重新生成图标**：
+
+```bash
+npm run icons        # 即 python3 tools/gen_icons.py
+```
+
+**运行端到端测试**（加载真实浏览器逐项断言：添加关键词、默认黄色、批量/逐词颜色、大小写、iframe、动态内容、总开关、防重复注入等 14 项）：
+
+```bash
+npm install
+npm test
+# 浏览器路径不默认时指定：
+CHROME_BIN="/path/to/chrome" npm test
+```
+
+## 已知限制
+
+- 高亮匹配**单个文本节点**：被行内标签拆开的词（如 `opera<b>ting</b>` 中搜 "operating"）无法命中
+- 关键词中的正则特殊字符会自动转义，`C++`、`C#`、`.net` 可放心输入
+- `chrome://` 等浏览器内部页面不能注入，属浏览器安全限制
+
+## License
+
+[MIT](LICENSE)

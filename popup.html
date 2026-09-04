@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>关键词高亮助手</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>关键词高亮助手</h1>
+    <label class="switch" title="开启 / 关闭高亮">
+      <input type="checkbox" id="enabled">
+      <span class="slider"></span>
+    </label>
+  </header>
+
+  <div class="add-row">
+    <input id="new-keyword" type="text" placeholder="输入关键词，回车添加（支持逗号批量）">
+    <button id="add-btn">添加</button>
+  </div>
+
+  <div id="empty" class="empty hidden">还没有关键词，添加一个试试～</div>
+  <ul id="keyword-list"></ul>
+
+  <div class="batch">
+    <div class="batch-title">批量设置颜色（当前共 <span id="batch-count">0</span> 个关键词）</div>
+    <div class="swatches" id="swatches"></div>
+    <div class="batch-row">
+      <input type="color" id="batch-color" value="#ffe066" title="自定义颜色">
+      <button id="apply-batch">应用到全部</button>
+    </div>
+  </div>
+
+  <div class="options">
+    <label><input type="checkbox" id="case-sensitive">区分大小写</label>
+    <label><input type="checkbox" id="watch-dom">监听动态内容</label>
+  </div>
+
+  <footer>
+    <span id="count">当前页高亮 — 处</span>
+    <button id="refresh" title="重新扫描当前页面；若扩展安装前就已打开此页，会自动注入生效">重新扫描</button>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "keyword-highlighter",
+  "version": "1.3.0",
+  "private": true,
+  "description": "关键词高亮助手（Chrome/Edge 扩展）——本 package.json 仅用于开发与测试，扩展本体无需构建",
+  "scripts": {
+    "test": "node test/test.js",
+    "icons": "python3 tools/gen_icons.py"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.55.0"
+  }
+}

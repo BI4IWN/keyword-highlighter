@@ -1,0 +1,10 @@
+/* 关键词高亮样式：颜色由每个 mark 的 --kwh-color 变量控制 */
+mark.kwh-mark {
+  background-color: var(--kwh-color, #ffe066) !important;
+  color: #212529 !important;
+  border-radius: 2px;
+  padding: 0 1px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  cursor: default;
+}
