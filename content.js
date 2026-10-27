@@ -43,8 +43,11 @@
   let observer = null;
   let scanTimer = 0;
   let lastCount = 0;
-  // 忽略由自身 DOM 操作（清包装/包装）触发的 mutation，防止无限重扫
-  let suppressUntil = 0;
+  // 自身 DOM 操作（清包装/包装/字段着色）的变更由 applying 标记抑制：
+  // MutationObserver 回调在微任务中先于 setTimeout(0) 执行，重扫无论耗时多久
+  // 都能确定性地跳过自身触发的变更，防止大页面上出现无限重扫循环（闪烁）
+  let applying = false;
+  let lastApplyAt = 0;
 
   function escapeRegExp(s) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -183,37 +186,70 @@
     return count;
   }
 
-  function apply() {
-    suppressUntil = Date.now() + 80;
-    const matcher = settings.enabled ? buildMatcher() : null;
-    clearMarks();
-    clearFields();
-    let count = 0;
-    if (matcher && document.body) {
-      count += scan(document.body, matcher);
-      count += highlightFields(matcher);
-    }
-    lastCount = count;
-    // 角标只统计主框架，iframe 中的高亮不计入，避免计数不准
-    if (window.top === window) {
-      try {
-        chrome.runtime.sendMessage({ type: 'kwh-badge', count });
-      } catch { /* 扩展重载后旧脚本失效，忽略 */ }
+  // 增量模式下检查已有 mark：文本不再包含任何关键词（如框架原地改写了文字）则拆掉
+  function unwrapStaleMarks(matcher) {
+    const lower = !settings.caseSensitive;
+    for (const mark of document.querySelectorAll(MARK_SELECTOR)) {
+      const text = lower ? mark.textContent.toLowerCase() : mark.textContent;
+      const stale = !matcher.kws.some(k => text.includes(lower ? k.text.toLowerCase() : k.text));
+      if (stale) {
+        const parent = mark.parentNode;
+        if (!parent) continue;
+        while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+        mark.remove();
+        parent.normalize();
+      }
     }
   }
 
-  function scheduleApply(delay = 500) {
+  // full=true（初始化/配置变更/手动重扫）：清空后全量重建
+  // full=false（页面变化触发）：增量补齐，保留已有高亮，避免整页闪烁
+  function apply(full = true) {
+    applying = true;
+    lastApplyAt = Date.now();
+    try {
+      const matcher = settings.enabled ? buildMatcher() : null;
+      if (full || !matcher) {
+        clearMarks();
+        clearFields();
+      } else {
+        unwrapStaleMarks(matcher);
+      }
+      let count = 0;
+      if (matcher && document.body) {
+        count += scan(document.body, matcher);
+        count += highlightFields(matcher);
+      }
+      lastCount = count;
+      // 角标只统计主框架，iframe 中的高亮不计入，避免计数不准
+      if (window.top === window) {
+        try {
+          chrome.runtime.sendMessage({ type: 'kwh-badge', count });
+        } catch { /* 扩展重载后旧脚本失效，忽略 */ }
+      }
+    } finally {
+      // 自身变更在微任务里送达观察器，宏任务复位标记，确保全部被忽略
+      setTimeout(() => { applying = false; }, 0);
+    }
+  }
+
+  function scheduleApply(delay = 200) {
     clearTimeout(scanTimer);
-    scanTimer = setTimeout(apply, delay);
+    scanTimer = setTimeout(() => apply(false), delay);
   }
 
   function setupObserver() {
     if (observer) { observer.disconnect(); observer = null; }
     if (!settings.enabled || !settings.watchDom || !document.body) return;
     observer = new MutationObserver(() => {
-      // 自身 DOM 操作产生的变更落在 suppressUntil 时间窗内，被这里挡掉；
-      // 页面框架轮询重渲染（抹掉高亮再写入新文字）发生在窗口外，触发重扫恢复高亮
-      if (Date.now() < suppressUntil) return;
+      if (applying) return;
+      // 静默期到达的零星变更（如后台轮询单次重渲染）立即同步恢复——
+      // 观察器回调在微任务中、本帧绘制前执行，抹除与恢复落在同一帧，视觉无闪烁；
+      // 密集变更期（如 SPA 初次渲染）退回去抖批量处理，避免反复全量扫描
+      if (Date.now() - lastApplyAt > 150) {
+        apply(false);
+        return;
+      }
       scheduleApply();
     });
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });

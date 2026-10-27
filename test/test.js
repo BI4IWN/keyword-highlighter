@@ -147,6 +147,19 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     await frame.waitForSelector('mark.kwh-mark', { timeout: 3000 }).catch(() => null);
     check('iframe 内 2 处高亮', await frame.evaluate(() => document.querySelectorAll('mark.kwh-mark').length) === 2);
 
+    // 增量重扫：无关 DOM 变更不应清掉重建已有高亮（节点身份不变 = 无闪烁）
+    const markBefore = await page.$('mark.kwh-mark');
+    await page.evaluate(() => {
+      const d = document.createElement('div');
+      d.id = 'churn-unrelated';
+      d.textContent = '无关内容';
+      document.body.appendChild(d);
+    });
+    await sleep(1100);
+    const markAfter = await page.$('mark.kwh-mark');
+    const sameNode = await page.evaluate(([a, b]) => a === b, [markBefore, markAfter]);
+    check('页面变化触发重扫时保留已有高亮（增量，无闪烁）', sameNode === true && await page.evaluate(() => document.querySelectorAll('mark.kwh-mark').length) === 6);
+
     await popup.click('.swatch[data-color="#a5d8ff"]');
     await sleep(900);
     info = await markInfo();
@@ -209,6 +222,25 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     });
     await sleep(1500);
     check('页面重渲染抹掉后自动恢复高亮', await page.evaluate(() => document.querySelector('.rwipe mark.kwh-mark')?.textContent === 'Chrome'));
+
+    // 模拟后台高频轮询：反复整段重写（抹掉高亮），高亮应稳定恢复且数量不失控
+    await page.evaluate(() => {
+      window.__wipes = 0;
+      window.__wipeTimer = setInterval(() => {
+        window.__wipes += 1;
+        const p = document.querySelector('.rwipe');
+        if (p) p.textContent = `轮询数据 Chrome 第${window.__wipes}次重写`;
+      }, 400);
+    });
+    await sleep(3400);
+    const churn = await page.evaluate(() => ({
+      wipes: window.__wipes,
+      total: document.querySelectorAll('mark.kwh-mark').length,
+      rwipe: document.querySelector('.rwipe mark.kwh-mark')?.textContent,
+    }));
+    await page.evaluate(() => clearInterval(window.__wipeTimer));
+    await sleep(1000);
+    check('高频轮询下高亮稳定恢复且数量不失控', churn.wipes >= 6 && churn.rwipe === 'Chrome' && churn.total === 7, JSON.stringify(churn));
   } finally {
     if (context) await context.close().catch(() => {});
     server.close();
