@@ -178,6 +178,27 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     await sleep(900);
     check('移除数字关键词后计数恢复', await page.evaluate(() => document.querySelectorAll('mark.kwh-mark').length) === 6);
 
+    // Shadow DOM（微前端如无界 wujie 的渲染方式）：shadow 内文本/字段/样式/动态恢复
+    const shadowOk = await page.evaluate(() => {
+      const sr = document.getElementById('shadow-host').shadowRoot;
+      const marks = [...sr.querySelectorAll('mark.kwh-mark')].map(m => m.textContent);
+      const ro = sr.querySelector('input');
+      return {
+        marks,
+        fieldOk: ro.classList.contains('kwh-field') && getComputedStyle(ro).backgroundColor === 'rgb(255, 224, 102)',
+        markStyled: sr.querySelector('mark.kwh-mark') && getComputedStyle(sr.querySelector('mark.kwh-mark')).backgroundColor === 'rgb(255, 224, 102)',
+      };
+    });
+    check('Shadow DOM 内文本被高亮', JSON.stringify(shadowOk.marks) === JSON.stringify(['Chrome', '高亮']), JSON.stringify(shadowOk));
+    check('Shadow DOM 样式注入与字段着色生效', shadowOk.fieldOk === true && shadowOk.markStyled === true);
+    await page.evaluate(() => {
+      const sr = document.getElementById('shadow-host').shadowRoot;
+      sr.querySelector('p').textContent = 'Shadow 重写后的 Chrome';
+    });
+    await sleep(1300);
+    check('Shadow DOM 动态重写后自动恢复', await page.evaluate(() =>
+      document.getElementById('shadow-host').shadowRoot.querySelector('mark.kwh-mark')?.textContent === 'Chrome'));
+
     await popup.click('.swatch[data-color="#a5d8ff"]');
     await sleep(900);
     info = await markInfo();
@@ -267,7 +288,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       const res = await chrome.tabs.sendMessage(tab.id, { type: 'kwh-get-count' }, { frameId: 0 });
       return res.count;
     }, `http://localhost:${PORT}/*`);
-    check('计数 = 页面高亮总量（增量重扫后仍准确，且不被 iframe 应答干扰）', cnt === 9, `count=${cnt}（7 处文字 + 2 个表单控件）`);
+    check('计数 = 页面高亮总量（增量重扫后仍准确，且不被 iframe 应答干扰）', cnt === 11, `count=${cnt}（主文档 7 文字 + 2 字段 + Shadow 内 1 文字 + 1 字段）`);
 
     // 竞态兜底：页面侧 MutationObserver 在扩展扫描进行中（看到 mark 插入的微任务里）
     // 同步插入新内容——这批变更会在 applying 期间到达，旧版整批丢弃导致永久漏扫

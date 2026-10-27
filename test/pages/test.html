@@ -23,6 +23,13 @@
   （禁用下拉框应整框着色）
 </p>
 <p id="numvar">数字变体：完成度 100% 与 100.00% 以及 100 % 还有 100.0%，不相关的是 1000.00% 和 99.75%。</p>
+<div id="shadow-host"></div>
+<script>
+  // 模拟微前端（如无界 wujie）：子应用渲染在 open shadow root 里
+  const sr = document.getElementById('shadow-host').attachShadow({ mode: 'open' });
+  sr.innerHTML = '<p>Shadow 内的 Chrome 与 高亮 应被处理</p>'
+    + '<p><input readonly value="Shadow 内只读 Chrome 框" style="width:260px"></p>';
+</script>
 <button id="add">动态追加一段文字</button>
 <div id="dyn"></div>
 <iframe src="iframe.html" style="width:100%;height:80px;border:1px solid #ccc"></iframe>

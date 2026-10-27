@@ -91,13 +91,15 @@
   }
 
   function clearMarks() {
-    for (const mark of document.querySelectorAll(MARK_SELECTOR)) {
-      const parent = mark.parentNode;
-      if (!parent) continue;
-      while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
-      mark.remove();
-      parent.normalize();
-    }
+    eachRoot((r) => {
+      for (const mark of r.querySelectorAll(MARK_SELECTOR)) {
+        const parent = mark.parentNode;
+        if (!parent) continue;
+        while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+        mark.remove();
+        parent.normalize();
+      }
+    });
   }
 
   // 在单个文本节点内拆分并包装所有命中片段，返回命中数
@@ -151,13 +153,16 @@
   }
 
   function clearFields() {
-    for (const el of document.querySelectorAll(`.${FIELD_CLASS}`)) cleanupField(el);
+    eachRoot((r) => {
+      for (const el of r.querySelectorAll(`.${FIELD_CLASS}`)) cleanupField(el);
+    });
   }
 
   // 只读/禁用的输入框、下拉框：值命中关键词时整框着色；可编辑控件不动，避免干扰输入
   function highlightFields(matcher) {
     let count = 0;
-    for (const el of document.querySelectorAll('input, textarea, select')) {
+    eachRoot((r) => {
+      for (const el of r.querySelectorAll('input, textarea, select')) {
       const type = (el.type || '').toLowerCase();
       if (FIELD_SKIP_TYPES.has(type)) continue;
       if (!(el.disabled || el.readOnly === true)) { cleanupField(el); continue; }
@@ -189,24 +194,79 @@
       } else {
         cleanupField(el);
       }
-    }
+      }
+    });
     return count;
   }
 
-  function scan(root, matcher) {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
-        const el = node.parentElement;
-        if (!el || el.closest(SKIP_SELECTOR) || el.closest(MARK_SELECTOR)) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        return NodeFilter.FILTER_ACCEPT;
+  // ============ Shadow DOM 支持 ============
+  // 微前端框架（如无界 wujie）把子应用渲染在 open shadow root 里，
+  // document 级查询与 TreeWalker 均不进入 shadow root，需要递归发现并单独处理
+  const shadowObservers = new Map(); // root -> MutationObserver
+  // 与 content.css 保持一致的样式（shadow root 内样式隔离，须用 adoptedStyleSheets 注入）
+  const KWH_CSS_TEXT = `
+mark.kwh-mark{background-color:var(--kwh-color,#ffe066)!important;color:#212529!important;border-radius:2px;padding:0 1px;box-decoration-break:clone;-webkit-box-decoration-break:clone;cursor:default}
+.kwh-field{background-color:var(--kwh-color,#ffe066)!important;color:#212529!important}
+`;
+  let kwhSheet = null;
+
+  function ensureSheet() {
+    if (kwhSheet) return kwhSheet;
+    try {
+      kwhSheet = new CSSStyleSheet();
+      kwhSheet.replaceSync(KWH_CSS_TEXT);
+    } catch { kwhSheet = null; }
+    return kwhSheet;
+  }
+
+  function registerShadowRoot(root) {
+    if (shadowObservers.has(root)) return;
+    const sheet = ensureSheet();
+    if (sheet && !root.adoptedStyleSheets.includes(sheet)) {
+      root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+    }
+    const ob = new MutationObserver(handleMutations);
+    ob.observe(root, { childList: true, subtree: true, characterData: true });
+    shadowObservers.set(root, ob);
+  }
+
+  // 宿主已脱离文档的 shadow root：断开观察并移除记录
+  function pruneShadowRoots() {
+    for (const [root, ob] of [...shadowObservers]) {
+      if (!root.host.isConnected) {
+        ob.disconnect();
+        shadowObservers.delete(root);
       }
-    });
-    // 先收集再修改，避免边遍历边改树
+    }
+  }
+
+  // 遍历所有文档根：主文档 + 已发现的 shadow root（嵌套的也会在扫描中被注册）
+  function eachRoot(fn) {
+    fn(document);
+    for (const root of [...shadowObservers.keys()]) fn(root);
+  }
+
+  function scan(root, matcher) {
+    // 递归收集文本节点；同时发现并注册 open shadow root
     const nodes = [];
-    while (walker.nextNode()) nodes.push(walker.currentNode);
+    const collect = (node) => {
+      for (const child of node.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          if (!child.nodeValue || !child.nodeValue.trim()) continue;
+          const el = child.parentElement;
+          if (!el || el.closest(SKIP_SELECTOR) || el.closest(MARK_SELECTOR)) continue;
+          nodes.push(child);
+        } else if (child.nodeType === Node.ELEMENT_NODE) {
+          if (child.shadowRoot) {
+            registerShadowRoot(child.shadowRoot);
+            collect(child.shadowRoot);
+          }
+          collect(child);
+        }
+      }
+    };
+    collect(root);
+    // 先收集再修改，避免边遍历边改树
     let count = 0;
     for (const node of nodes) count += wrapMatches(node, matcher);
     return count;
@@ -215,17 +275,19 @@
   // 增量模式下检查已有 mark：文本不再命中任何关键词（如框架原地改写了文字）则拆掉；
   // 用 matcher 本身测试而非字符串 includes，保持与实际匹配规则一致（数字容差等）
   function unwrapStaleMarks(matcher) {
-    for (const mark of document.querySelectorAll(MARK_SELECTOR)) {
-      matcher.regex.lastIndex = 0;
-      const stale = !matcher.regex.test(mark.textContent);
-      if (stale) {
-        const parent = mark.parentNode;
-        if (!parent) continue;
-        while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
-        mark.remove();
-        parent.normalize();
+    eachRoot((r) => {
+      for (const mark of r.querySelectorAll(MARK_SELECTOR)) {
+        matcher.regex.lastIndex = 0;
+        const stale = !matcher.regex.test(mark.textContent);
+        if (stale) {
+          const parent = mark.parentNode;
+          if (!parent) continue;
+          while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+          mark.remove();
+          parent.normalize();
+        }
       }
-    }
+    });
   }
 
   // full=true（初始化/配置变更/手动重扫）：清空后全量重建
@@ -244,12 +306,16 @@
       if (matcher && document.body) {
         scan(document.body, matcher);
         highlightFields(matcher);
+        pruneShadowRoots();
       }
       // 计数读取当前 DOM 的真实总量（而非本轮新增量——增量重扫后新增为 0
       // 会让计数归零）。口径：页面命中的总量，含需滚动/展开后才可见的内容
       if (matcher && document.body) {
-        lastCount = document.querySelectorAll(MARK_SELECTOR).length
-          + document.querySelectorAll(`.${FIELD_CLASS}`).length;
+        let n = 0;
+        eachRoot((r) => {
+          n += r.querySelectorAll(MARK_SELECTOR).length + r.querySelectorAll(`.${FIELD_CLASS}`).length;
+        });
+        lastCount = n;
       } else {
         lastCount = 0;
       }
@@ -270,27 +336,32 @@
     scanTimer = setTimeout(() => apply(false), delay);
   }
 
+  // 主文档与各 shadow root 的 MutationObserver 共用同一处理逻辑
+  function handleMutations() {
+    if (applying) {
+      // 批次可能混有页面变更（如框架在我们扫描期间渲染的新内容——其
+      // MutationObserver 回调与我们的变更同批送达），不能整批丢弃；
+      // 安排一次增量兜底重扫。若批次纯由自身变更构成，该次重扫没有
+      // 任何新工作、不产生新变更，链条自然终止，不会形成循环
+      scheduleApply();
+      return;
+    }
+    // 静默期到达的零星变更（如后台轮询单次重渲染）立即同步恢复——
+    // 观察器回调在微任务中、本帧绘制前执行，抹除与恢复落在同一帧，视觉无闪烁；
+    // 密集变更期（如 SPA 初次渲染）退回去抖批量处理，避免反复全量扫描
+    if (Date.now() - lastApplyAt > 150) {
+      apply(false);
+      return;
+    }
+    scheduleApply();
+  }
+
   function setupObserver() {
     if (observer) { observer.disconnect(); observer = null; }
+    for (const [, ob] of shadowObservers) ob.disconnect();
+    shadowObservers.clear(); // 关闭监听时一并清理，重新启用后由扫描再注册
     if (!settings.enabled || !settings.watchDom || !document.body) return;
-    observer = new MutationObserver(() => {
-      if (applying) {
-        // 批次可能混有页面变更（如框架在我们扫描期间渲染的新内容——其
-        // MutationObserver 回调与我们的变更同批送达），不能整批丢弃；
-        // 安排一次增量兜底重扫。若批次纯由自身变更构成，该次重扫没有
-        // 任何新工作、不产生新变更，链条自然终止，不会形成循环
-        scheduleApply();
-        return;
-      }
-      // 静默期到达的零星变更（如后台轮询单次重渲染）立即同步恢复——
-      // 观察器回调在微任务中、本帧绘制前执行，抹除与恢复落在同一帧，视觉无闪烁；
-      // 密集变更期（如 SPA 初次渲染）退回去抖批量处理，避免反复全量扫描
-      if (Date.now() - lastApplyAt > 150) {
-        apply(false);
-        return;
-      }
-      scheduleApply();
-    });
+    observer = new MutationObserver(handleMutations);
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
   }
 
