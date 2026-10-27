@@ -8,11 +8,41 @@ const path = require('path');
 const fs = require('fs');
 const { chromium } = require('playwright-core');
 
+const os = require('os');
 const EXT = path.resolve(__dirname, '..');
 const PAGES = path.join(__dirname, 'pages');
 const PORT = Number(process.env.TEST_PORT || 8899);
-const PROFILE = path.join(require('os').tmpdir(), `kwh-pw-profile-${Date.now()}`);
-const FALLBACK_EXE = '/Users/imac/Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
+const PROFILE = path.join(os.tmpdir(), `kwh-pw-profile-${Date.now()}`);
+
+// 在 playwright 浏览器缓存里找已安装的 Chromium（版本目录取字典序最大）
+function findCachedChromium() {
+  const cacheRoots = [
+    path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright'),
+    path.join(os.homedir(), '.cache', 'ms-playwright'),
+  ];
+  const candidates = [
+    'chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
+    'chrome-mac/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
+    'chrome-mac/Chromium.app/Contents/MacOS/Chromium',
+    'chrome-linux/chrome',
+  ];
+  for (const root of cacheRoots) {
+    let dirs = [];
+    try {
+      dirs = fs.readdirSync(root)
+        .filter(d => d.startsWith('chromium-') && !d.includes('headless'))
+        .sort()
+        .reverse();
+    } catch { continue; }
+    for (const dir of dirs) {
+      for (const rel of candidates) {
+        const p = path.join(root, dir, rel);
+        if (fs.existsSync(p)) return p;
+      }
+    }
+  }
+  return null;
+}
 
 function resolveBrowser() {
   if (process.env.CHROME_BIN) return process.env.CHROME_BIN;
@@ -20,7 +50,8 @@ function resolveBrowser() {
     const p = chromium.executablePath();
     if (p && fs.existsSync(p)) return p; // playwright 管理的浏览器已下载
   } catch { /* 未安装 playwright 浏览器 */ }
-  if (fs.existsSync(FALLBACK_EXE)) return FALLBACK_EXE;
+  const fallback = findCachedChromium();
+  if (fallback) return fallback;
   throw new Error('未找到浏览器：请设置 CHROME_BIN 环境变量指向 Chrome/Chromium 可执行文件');
 }
 
@@ -101,7 +132,16 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     let info = await markInfo();
     check('主文档 6 处且全部默认黄色', info.total === 6 && Object.values(info.byTitle).every(([c]) => c === '#ffe066'), JSON.stringify(info));
     check('code 块内不高亮', await page.evaluate(() => !document.querySelector('code mark')));
-    check('input 内不高亮', await page.evaluate(() => !document.querySelector('input mark')));
+    check('input 内不插入 mark', await page.evaluate(() => !document.querySelector('input mark')));
+
+    // 只读/禁用表单控件整框高亮，可编辑控件不动
+    check('只读输入框整框高亮（默认黄色）', await page.evaluate(() => {
+      const el = document.querySelector('#ro');
+      return el.classList.contains('kwh-field')
+        && getComputedStyle(el).backgroundColor === 'rgb(255, 224, 102)';
+    }));
+    check('禁用下拉框整框高亮', await page.evaluate(() => !!document.querySelector('select[disabled].kwh-field')));
+    check('可编辑输入框不高亮', await page.evaluate(() => !document.getElementById('box').classList.contains('kwh-field')));
 
     const frame = page.frames().find(f => f !== page.mainFrame());
     await frame.waitForSelector('mark.kwh-mark', { timeout: 3000 }).catch(() => null);

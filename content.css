@@ -8,3 +8,9 @@ mark.kwh-mark {
   -webkit-box-decoration-break: clone;
   cursor: default;
 }
+
+/* 只读/禁用输入框、下拉框：无法插入 <mark>，命中时整框着色 */
+.kwh-field {
+  background-color: var(--kwh-color, #ffe066) !important;
+  color: #212529 !important;
+}

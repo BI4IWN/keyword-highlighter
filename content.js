@@ -16,6 +16,15 @@
   const MARK_SELECTOR = `mark.${MARK_CLASS}`;
   const DEFAULT_COLOR = '#ffe066';
 
+  // 只读/禁用表单控件无法插入 <mark>，改用整框着色（kwh-field）
+  const FIELD_CLASS = 'kwh-field';
+  // 这些控件类型的 value 含义特殊或不应触碰，不做整框高亮
+  const FIELD_SKIP_TYPES = new Set([
+    'hidden', 'checkbox', 'radio', 'button', 'submit', 'reset', 'image',
+    'file', 'range', 'color', 'date', 'datetime-local', 'month', 'week',
+    'time', 'password'
+  ]);
+
   const DEFAULTS = {
     enabled: true,
     caseSensitive: false,
@@ -108,6 +117,53 @@
     return count;
   }
 
+  function cleanupField(el) {
+    if (!el.classList.contains(FIELD_CLASS) && !el.dataset.kwh) return;
+    el.classList.remove(FIELD_CLASS);
+    el.style.removeProperty('--kwh-color');
+    delete el.dataset.kwh;
+    el.removeAttribute('title');
+  }
+
+  function clearFields() {
+    for (const el of document.querySelectorAll(`.${FIELD_CLASS}`)) cleanupField(el);
+  }
+
+  // 只读/禁用的输入框、下拉框：值命中关键词时整框着色；可编辑控件不动，避免干扰输入
+  function highlightFields(matcher) {
+    let count = 0;
+    for (const el of document.querySelectorAll('input, textarea, select')) {
+      const type = (el.type || '').toLowerCase();
+      if (FIELD_SKIP_TYPES.has(type)) continue;
+      if (!(el.disabled || el.readOnly === true)) { cleanupField(el); continue; }
+      const value = el.tagName === 'SELECT' ? (el.selectedOptions[0]?.text ?? '') : el.value;
+      if (!value) { cleanupField(el); continue; }
+      matcher.regex.lastIndex = 0;
+      let m;
+      let hits = 0;
+      let hitKi = -1;
+      while ((m = matcher.regex.exec(value)) !== null) {
+        if (m[0].length === 0) { matcher.regex.lastIndex += 1; continue; }
+        hits += 1;
+        if (hitKi === -1) {
+          for (let i = 1; i < m.length; i += 1) {
+            if (m[i] !== undefined) { hitKi = i - 1; break; }
+          }
+        }
+      }
+      if (hits > 0) {
+        el.classList.add(FIELD_CLASS);
+        el.style.setProperty('--kwh-color', matcher.kws[hitKi].color);
+        el.dataset.kwh = '1';
+        el.title = `关键词：${matcher.kws[hitKi].text}`;
+        count += hits;
+      } else {
+        cleanupField(el);
+      }
+    }
+    return count;
+  }
+
   function scan(root, matcher) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
@@ -131,8 +187,12 @@
     suppressUntil = Date.now() + 80;
     const matcher = settings.enabled ? buildMatcher() : null;
     clearMarks();
+    clearFields();
     let count = 0;
-    if (matcher && document.body) count = scan(document.body, matcher);
+    if (matcher && document.body) {
+      count += scan(document.body, matcher);
+      count += highlightFields(matcher);
+    }
     lastCount = count;
     // 角标只统计主框架，iframe 中的高亮不计入，避免计数不准
     if (window.top === window) {
