@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "关键词高亮助手",
   "description": "自定义关键词，在 Chrome / Edge 等基于 Chromium 的浏览器中高亮显示网页关键词，支持逐词颜色、大小写与动态内容。",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

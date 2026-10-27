@@ -207,26 +207,13 @@
     scanTimer = setTimeout(apply, delay);
   }
 
-  function isOwnMutation(m) {
-    if (m.type === 'characterData') {
-      const el = m.target.parentElement;
-      return !!(el && el.closest(MARK_SELECTOR));
-    }
-    for (const n of m.addedNodes) {
-      if (n.nodeType === 1 && (n.matches(MARK_SELECTOR) || n.querySelector?.(MARK_SELECTOR))) return true;
-    }
-    for (const n of m.removedNodes) {
-      if (n.nodeType === 1 && n.matches(MARK_SELECTOR)) return true;
-    }
-    return false;
-  }
-
   function setupObserver() {
     if (observer) { observer.disconnect(); observer = null; }
     if (!settings.enabled || !settings.watchDom || !document.body) return;
-    observer = new MutationObserver((mutations) => {
+    observer = new MutationObserver(() => {
+      // 自身 DOM 操作产生的变更落在 suppressUntil 时间窗内，被这里挡掉；
+      // 页面框架轮询重渲染（抹掉高亮再写入新文字）发生在窗口外，触发重扫恢复高亮
       if (Date.now() < suppressUntil) return;
-      if (mutations.some(isOwnMutation)) return;
       scheduleApply();
     });
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });

@@ -193,6 +193,22 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     }, `http://localhost:${PORT}/*`);
     await sleep(800);
     check('重复注入不产生重复高亮（守卫生效）', await page.evaluate(() => document.querySelectorAll('mark.kwh-mark').length) === 6);
+
+    // 模拟后台系统轮询重渲染：框架把高亮连同旧文字一起抹掉再写入新内容（同一批次）
+    await page.evaluate(() => {
+      const p = document.createElement('p');
+      p.className = 'rwipe';
+      p.textContent = '轮询数据 Chrome 首次渲染';
+      document.body.appendChild(p);
+    });
+    await sleep(1300);
+    check('轮询新增文字自动高亮', await page.evaluate(() => document.querySelector('.rwipe mark.kwh-mark')?.textContent === 'Chrome'));
+
+    await page.evaluate(() => {
+      document.querySelector('.rwipe').textContent = '轮询数据 Chrome 重渲染后';
+    });
+    await sleep(1500);
+    check('页面重渲染抹掉后自动恢复高亮', await page.evaluate(() => document.querySelector('.rwipe mark.kwh-mark')?.textContent === 'Chrome'));
   } finally {
     if (context) await context.close().catch(() => {});
     server.close();
