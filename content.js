@@ -177,10 +177,14 @@
         }
       }
       if (hits > 0) {
-        el.classList.add(FIELD_CLASS);
-        el.style.setProperty('--kwh-color', matcher.kws[hitKi].color);
+        // 幂等写：值未变化不写，保证无工作的重扫零 DOM 变更（防兜底链条自激）
+        if (!el.classList.contains(FIELD_CLASS)) el.classList.add(FIELD_CLASS);
+        if (el.style.getPropertyValue('--kwh-color') !== matcher.kws[hitKi].color) {
+          el.style.setProperty('--kwh-color', matcher.kws[hitKi].color);
+        }
+        const title = `关键词：${matcher.kws[hitKi].text}`;
+        if (el.title !== title) el.title = title;
         el.dataset.kwh = '1';
-        el.title = `关键词：${matcher.kws[hitKi].text}`;
         count += hits;
       } else {
         cleanupField(el);
@@ -270,7 +274,14 @@
     if (observer) { observer.disconnect(); observer = null; }
     if (!settings.enabled || !settings.watchDom || !document.body) return;
     observer = new MutationObserver(() => {
-      if (applying) return;
+      if (applying) {
+        // 批次可能混有页面变更（如框架在我们扫描期间渲染的新内容——其
+        // MutationObserver 回调与我们的变更同批送达），不能整批丢弃；
+        // 安排一次增量兜底重扫。若批次纯由自身变更构成，该次重扫没有
+        // 任何新工作、不产生新变更，链条自然终止，不会形成循环
+        scheduleApply();
+        return;
+      }
       // 静默期到达的零星变更（如后台轮询单次重渲染）立即同步恢复——
       // 观察器回调在微任务中、本帧绘制前执行，抹除与恢复落在同一帧，视觉无闪烁；
       // 密集变更期（如 SPA 初次渲染）退回去抖批量处理，避免反复全量扫描

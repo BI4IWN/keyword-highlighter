@@ -268,6 +268,30 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       return res.count;
     }, `http://localhost:${PORT}/*`);
     check('计数 = 页面高亮总量（增量重扫后仍准确，且不被 iframe 应答干扰）', cnt === 9, `count=${cnt}（7 处文字 + 2 个表单控件）`);
+
+    // 竞态兜底：页面侧 MutationObserver 在扩展扫描进行中（看到 mark 插入的微任务里）
+    // 同步插入新内容——这批变更会在 applying 期间到达，旧版整批丢弃导致永久漏扫
+    await page.evaluate(() => {
+      window.__lateFired = false;
+      const mo = new MutationObserver((muts) => {
+        if (window.__lateFired) return;
+        if (muts.some(m => [...m.addedNodes].some(n => n.nodeType === 1 && n.classList?.contains('kwh-mark')))) {
+          window.__lateFired = true;
+          const p = document.createElement('p');
+          p.id = 'late';
+          p.textContent = '迟到内容 Chrome';
+          document.body.appendChild(p);
+        }
+      });
+      mo.observe(document.body, { childList: true, subtree: true });
+      // 触发文本需含关键词，让这轮扫描真正插入 mark，页面侧观察者才能捕捉到
+      const d = document.createElement('div');
+      d.textContent = '触发一次重扫 Chrome';
+      document.body.appendChild(d);
+    });
+    await sleep(1500);
+    check('扫描期间页面插入的内容也能被兜底补扫（竞态）', await page.evaluate(() =>
+      document.querySelector('#late mark.kwh-mark')?.textContent === 'Chrome'));
   } finally {
     if (context) await context.close().catch(() => {});
     server.close();
