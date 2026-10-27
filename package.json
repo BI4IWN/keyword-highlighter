@@ -1,6 +1,6 @@
 {
   "name": "keyword-highlighter",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "private": true,
   "description": "关键词高亮助手（Chrome/Edge 扩展）——本 package.json 仅用于开发与测试，扩展本体无需构建",
   "scripts": {

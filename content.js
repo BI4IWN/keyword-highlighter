@@ -53,14 +53,36 @@
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
+  // 纯数字关键词（可带小数与百分号）→ 数字容差模式：
+  // 「100%」可命中 100%、100 %、100.0%、100.00%、100％（全角）；
+  // 「99.50%」命中 99.5%/99.50%/99.500% 但不命中 99.75%（保持数值语义）。
+  // 页面文本里小数位多少、百分号前有无空格、全半角符号均不影响。
+  function keywordPattern(rawText) {
+    const text = rawText.trim();
+    const m = text.match(/^(\d+)(?:[.,．](\d+))?\s*([%％])?$/);
+    if (!m) return escapeRegExp(text);
+    const [, int, frac = '', pct] = m;
+    let fracPat;
+    if (!frac) {
+      fracPat = '(?:[.,．]\\d+)?'; // 整数关键词：可选任意小数位
+    } else {
+      const stripped = frac.replace(/0+$/, ''); // 去掉末尾 0 后的固定部分
+      fracPat = stripped
+        ? `[.,．]${stripped}0*`          // 99.50 → .5 / .50 / .500…
+        : '(?:[.,．]0*)?';               // 100.00 → 可省略或任意个 0
+    }
+    const pctPat = pct ? '\\s*[%％]' : '';
+    return `${int}${fracPat}${pctPat}`;
+  }
+
   // 长词优先排序，避免短词在同一起点抢先匹配（如 "OpenAI" vs "AI"）
   function buildMatcher() {
     const kws = settings.keywords
       .filter(k => k && typeof k.text === 'string' && k.text.trim())
-      .map(k => ({ text: k.text, color: k.color || DEFAULT_COLOR }))
+      .map(k => ({ text: k.text.trim(), color: k.color || DEFAULT_COLOR }))
       .sort((a, b) => b.text.length - a.text.length);
     if (!kws.length) return null;
-    const pattern = kws.map(k => `(${escapeRegExp(k.text)})`).join('|');
+    const pattern = kws.map(k => `(${keywordPattern(k.text)})`).join('|');
     try {
       return { regex: new RegExp(pattern, settings.caseSensitive ? 'g' : 'gi'), kws };
     } catch {
@@ -186,12 +208,12 @@
     return count;
   }
 
-  // 增量模式下检查已有 mark：文本不再包含任何关键词（如框架原地改写了文字）则拆掉
+  // 增量模式下检查已有 mark：文本不再命中任何关键词（如框架原地改写了文字）则拆掉；
+  // 用 matcher 本身测试而非字符串 includes，保持与实际匹配规则一致（数字容差等）
   function unwrapStaleMarks(matcher) {
-    const lower = !settings.caseSensitive;
     for (const mark of document.querySelectorAll(MARK_SELECTOR)) {
-      const text = lower ? mark.textContent.toLowerCase() : mark.textContent;
-      const stale = !matcher.kws.some(k => text.includes(lower ? k.text.toLowerCase() : k.text));
+      matcher.regex.lastIndex = 0;
+      const stale = !matcher.regex.test(mark.textContent);
       if (stale) {
         const parent = mark.parentNode;
         if (!parent) continue;

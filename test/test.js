@@ -160,6 +160,24 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const sameNode = await page.evaluate(([a, b]) => a === b, [markBefore, markAfter]);
     check('页面变化触发重扫时保留已有高亮（增量，无闪烁）', sameNode === true && await page.evaluate(() => document.querySelectorAll('mark.kwh-mark').length) === 6);
 
+    // 数字容差匹配：关键词 100% 应命中 100/100.0/100.00/带空格/全角等变体，不误伤其他数字
+    await popup.fill('#new-keyword', '100%');
+    await popup.press('#new-keyword', 'Enter');
+    await sleep(900);
+    const numMarks = await page.evaluate(() =>
+      [...document.querySelectorAll('#numvar mark.kwh-mark')].map(m => m.textContent));
+    check('数字容差：100% 命中 4 种写法变体', JSON.stringify(numMarks) === JSON.stringify(['100%', '100.00%', '100 %', '100.0%']), JSON.stringify(numMarks));
+    check('数字容差：不误伤 1000.00% 与 99.75%', numMarks.length === 4 && await page.evaluate(() =>
+      ![...document.querySelectorAll('#numvar mark.kwh-mark')].some(m => m.textContent.includes('75') || m.textContent.startsWith('1000'))));
+    // 移除数字关键词并删掉测试段，恢复基线计数
+    await popup.evaluate(() => {
+      const li = [...document.querySelectorAll('#keyword-list li')].find(el => el.querySelector('.kw-text')?.textContent === '100%');
+      li?.querySelector('.kw-del')?.click();
+    });
+    await page.evaluate(() => document.getElementById('numvar')?.remove());
+    await sleep(900);
+    check('移除数字关键词后计数恢复', await page.evaluate(() => document.querySelectorAll('mark.kwh-mark').length) === 6);
+
     await popup.click('.swatch[data-color="#a5d8ff"]');
     await sleep(900);
     info = await markInfo();
