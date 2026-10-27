@@ -123,7 +123,9 @@ async function updateCount() {
   const tab = await getActiveTab();
   if (!tab) { setCount('当前页高亮 — 处'); return; }
   try {
-    const res = await chrome.tabs.sendMessage(tab.id, { type: 'kwh-get-count' });
+    // frameId:0 只发主框架——默认广播会让 iframe 里的内容脚本抢先应答，
+    // 拿到 iframe 的计数而不是页面的
+    const res = await chrome.tabs.sendMessage(tab.id, { type: 'kwh-get-count' }, { frameId: 0 });
     setCount(`当前页高亮 ${res?.count ?? 0} 处`);
   } catch {
     setCount('此页面未生效，点「重新扫描」注入');
@@ -144,15 +146,16 @@ async function ensureInjected(tabId) {
 async function rescan() {
   const tab = await getActiveTab();
   if (!tab) return;
+  const toMain = (msg) => chrome.tabs.sendMessage(tab.id, msg, { frameId: 0 });
   try {
-    const res = await chrome.tabs.sendMessage(tab.id, { type: 'kwh-rescan' });
+    const res = await toMain({ type: 'kwh-rescan' });
     setCount(`当前页高亮 ${res?.count ?? 0} 处`);
     return;
   } catch { /* 未注入，走下方补注入流程 */ }
   if (await ensureInjected(tab.id)) {
     await new Promise(r => setTimeout(r, 400));
     try {
-      const res = await chrome.tabs.sendMessage(tab.id, { type: 'kwh-rescan' });
+      const res = await toMain({ type: 'kwh-rescan' });
       setCount(`当前页高亮 ${res?.count ?? 0} 处`);
       return;
     } catch { /* 注入了但仍无法通信，按不支持处理 */ }

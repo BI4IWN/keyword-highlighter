@@ -259,6 +259,15 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     await page.evaluate(() => clearInterval(window.__wipeTimer));
     await sleep(1000);
     check('高频轮询下高亮稳定恢复且数量不失控', churn.wipes >= 6 && churn.rwipe === 'Chrome' && churn.total === 7, JSON.stringify(churn));
+
+    // 计数必须反映页面高亮总量：增量重扫（如轮询触发的恢复）之后也保持准确，
+    // 不能只统计"本轮新增"（旧实现增量轮之后计数会归零/变小）
+    const cnt = await popup.evaluate(async (tabUrl) => {
+      const [tab] = await chrome.tabs.query({ url: tabUrl });
+      const res = await chrome.tabs.sendMessage(tab.id, { type: 'kwh-get-count' }, { frameId: 0 });
+      return res.count;
+    }, `http://localhost:${PORT}/*`);
+    check('计数 = 页面高亮总量（增量重扫后仍准确，且不被 iframe 应答干扰）', cnt === 9, `count=${cnt}（7 处文字 + 2 个表单控件）`);
   } finally {
     if (context) await context.close().catch(() => {});
     server.close();

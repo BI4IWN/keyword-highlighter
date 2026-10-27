@@ -237,16 +237,22 @@
       } else {
         unwrapStaleMarks(matcher);
       }
-      let count = 0;
       if (matcher && document.body) {
-        count += scan(document.body, matcher);
-        count += highlightFields(matcher);
+        scan(document.body, matcher);
+        highlightFields(matcher);
       }
-      lastCount = count;
+      // 计数读取当前 DOM 的真实总量（而非本轮新增量——增量重扫后新增为 0
+      // 会让计数归零）。口径：页面命中的总量，含需滚动/展开后才可见的内容
+      if (matcher && document.body) {
+        lastCount = document.querySelectorAll(MARK_SELECTOR).length
+          + document.querySelectorAll(`.${FIELD_CLASS}`).length;
+      } else {
+        lastCount = 0;
+      }
       // 角标只统计主框架，iframe 中的高亮不计入，避免计数不准
       if (window.top === window) {
         try {
-          chrome.runtime.sendMessage({ type: 'kwh-badge', count });
+          chrome.runtime.sendMessage({ type: 'kwh-badge', count: lastCount });
         } catch { /* 扩展重载后旧脚本失效，忽略 */ }
       }
     } finally {
